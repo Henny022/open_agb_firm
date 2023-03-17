@@ -14,3 +14,4 @@ open_agb_firm.firm
 open_agb_firm*.7z
 TODO.txt
 venv
+source/arm11/inputs.h

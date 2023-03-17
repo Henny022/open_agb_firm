@@ -1,3 +1,5 @@
+#define INPUT_DISPLAY
+#define TAS
 /*
  *   This file is part of open_agb_firm
  *   Copyright (C) 2021 derrek, profi200
@@ -737,8 +739,19 @@ Result oafParseConfigEarly(void)
 	return res;
 }
 
+#ifdef TAS
+u32 current_input;
+u32 current_count;
+#include "inputs.h"
+const u32 num_inputs = sizeof(inputs)/sizeof(inputs[0]);
+#endif
+
 Result oafInitAndRun(void)
 {
+#ifdef TAS
+	current_input = 0;
+	current_count = (inputs[0]>>10)+1;
+#endif
 	Result res;
 	char *const filePath = (char*)calloc(512, 1);
 	if(filePath != NULL)
@@ -783,13 +796,7 @@ Result oafInitAndRun(void)
 			// Prepare ARM9 for GBA mode + save loading.
 			if((res = LGY_prepareGbaMode(g_oafConfig.directBoot, saveType, filePath)) == RES_OK)
 			{
-#ifdef NDEBUG
-				// Force black and turn the backlight off on the bottom screen.
-				// Don't turn the backlight off on 2DS (1 panel).
-				GFX_setForceBlack(false, true);
-				if(MCU_getSystemModel() != 3) GFX_powerOffBacklights(GFX_BLIGHT_BOT);
-#endif
-
+				ee_puts("\x1b[2J");
 				// Initialize the legacy frame buffer and frame handler.
 				const KHandle frameReadyEvent = createEvent(false);
 				LGYFB_init(frameReadyEvent, g_oafConfig.scaler); // Setup Legacy Framebuffer.
@@ -813,9 +820,48 @@ Result oafInitAndRun(void)
 
 void oafUpdate(void)
 {
-	LGY_handleOverrides();
+	u16 input;
+#ifdef TAS
+	if (current_input < num_inputs)
+		input = inputs[current_input] & 0x3ff;
+	else
+#endif
+		input = hidKeysHeld()&0x3ff;
+	LGY_handleOverrides(input);
+	
 	updateBacklight();
+
+#ifdef INPUT_DISPLAY
+	char input_string[] = "          ";
+
+	static const char buttons[] = "ABsS><^vRL";
+
+	for (int i = 0;i<10;i++)
+	{
+		if(input&(1<<i))
+		{
+			input_string[i] = buttons[i];
+		}
+	}
+
+	ee_printf("\x1b[1;1H%s", input_string);
+	#ifdef TAS
+	ee_printf("\x1b[2;1H%10lu: %3x, %2lu           ", current_input, input, current_count);
+	#endif
+#endif
+
 	waitForEvent(g_frameReadyEvent);
+#ifdef TAS
+	current_count--;
+	if (current_count == 0)
+	{
+		current_input++;
+		if (current_input < num_inputs)
+			current_count = (inputs[current_input]>>10)+1;
+		else
+			current_count = -1;
+	}
+#endif
 }
 
 void oafFinish(void)
